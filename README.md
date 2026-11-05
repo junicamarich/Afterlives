@@ -68,6 +68,7 @@ label{font-size:.8rem;font-weight:600;color:var(--muted);display:block}
 select,textarea{font:inherit;width:100%;border:1px solid #CFC5AE;border-radius:8px;background:var(--white);padding:.5rem .7rem;color:var(--ink)}
 textarea{min-height:5rem;resize:vertical;font-size:.92rem}
 select{min-width:14rem}
+input[type=text],input[type=password]{font:inherit;width:100%;border:1px solid #CFC5AE;border-radius:8px;background:var(--white);padding:.5rem .7rem;color:var(--ink)}
 .check{display:flex;gap:.5rem;align-items:center;font-size:.9rem;color:var(--ink);font-weight:500}
 .check input{width:auto;accent-color:var(--burgundy)}
 .legend{display:flex;flex-wrap:wrap;gap:.5rem 1.25rem;font-size:.8rem;color:var(--muted);margin-top:.75rem}
@@ -154,6 +155,7 @@ footer .small{font-size:.78rem}
     <a class="brand" href="#/home">AFTERLIVES</a>
     <nav id="nav" aria-label="Main">
       <a href="#/home" data-route="home">Home</a>
+      <a href="#/build" data-route="build">Build</a>
       <a href="#/lineage" data-route="lineage">Story Lineage</a>
       <a href="#/compare" data-route="compare">Comparison Room</a>
       <a href="#/lens" data-route="lens">Critical Lens</a>
@@ -164,7 +166,7 @@ footer .small{font-size:.78rem}
   <main id="app" tabindex="-1"></main>
   <footer>
     <p>Afterlives is a research assistant, not an automated literary critic. The researcher owns the interpretation.</p>
-    <p class="small">Prototype · Literature and New Media · Demo data only</p>
+    <p class="small">Literature and New Media · Your data stays in this browser</p>
     <div class="band" aria-hidden="true"></div>
   </footer>
   <script>
@@ -284,7 +286,7 @@ window.AFTERLIVES_DATA = {
    Reads window.AFTERLIVES_DATA (data.js). Notes are saved in the browser's localStorage. */
 (function () {
   'use strict';
-  var D = window.AFTERLIVES_DATA;
+  var DEMO = window.AFTERLIVES_DATA, D;
   var $ = function (s, r) { return (r || document).querySelector(s); };
   var esc = function (s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
@@ -296,17 +298,12 @@ window.AFTERLIVES_DATA = {
     set: function (k, v) { try { localStorage.setItem('afterlives:' + k, JSON.stringify(v)); } catch (e) { /* storage unavailable */ } }
   };
 
-  var V = {}; D.versions.forEach(function (v) { V[v.id] = v; });
-  var TOPIC = {}; D.topics.forEach(function (t) { TOPIC[t.id] = t; });
+  var V = {}, TOPIC = {};
   var STATUS = { verified: 'Verified fact', interpretation: 'Interpretation', missing: 'Missing information', ai: 'AI-generated' };
   var REL = { 'documented adaptation': 'e-doc', 'stated inspiration': 'e-stated', 'thematic parallel': 'e-theme' };
 
-  var S = {
-    node: D.versions[0].id, edge: null,
-    A: D.versions[0].id, B: D.versions[D.versions.length - 1].id, diff: true,
-    ledger: D.versions[0].id, filter: 'all', pair: 'all',
-    ann: store.get('ann', {}), lens: store.get('lens', {})
-  };
+  var S = { node: null, edge: null, A: null, B: null, diff: true, ledger: null, filter: 'all', pair: 'all', open: null, msg: '',
+    key: store.get('key', ''), ann: store.get('ann', {}), lens: store.get('lens', {}) };
 
   var pill = function (cls, t) { return '<span class="pill ' + cls + '">' + esc(t) + '</span>'; };
   var vs = function (id) { return esc(V[id].short); };
@@ -339,7 +336,7 @@ window.AFTERLIVES_DATA = {
       '<h1>Every story leaves traces.</h1>' +
       '<p class="lede">Explore how narratives change across languages, cultures, and media.</p></section>' +
       '<section class="card start"><p class="eyebrow">Start here</p><h2>Try a sample research journey in 4 steps</h2>' +
-      '<p>Afterlives helps you study how one story changes when it becomes a novel or a short drama. This demo uses an invented story with three versions.</p>' +
+      '<p>Afterlives helps you study how one story changes when it becomes a novel or a short drama. Add your own texts in Build, or explore the included sample collection.</p>' +
       '<ol class="steps">' +
       '<li><a href="#/lineage"><b>See the versions</b><span>Look at how the three versions are connected.</span></a></li>' +
       '<li><a href="#/compare"><b>Compare two of them</b><span>Read them side by side and note what changed.</span></a></li>' +
@@ -355,7 +352,7 @@ window.AFTERLIVES_DATA = {
       '<a class="tile" href="#/compare"><h3>Comparison Room</h3><p>Examine what changed.</p></a>' +
       '<a class="tile" href="#/lens"><h3>Critical Lens</h3><p>Turn differences into research questions.</p></a>' +
       '<a class="tile" href="#/ledger"><h3>Context Ledger</h3><p>Record what is known and what remains uncertain.</p></a></section>' +
-      '<p class="demo-note"><strong>Demo collection.</strong> ' + esc(c.note) + ' Replace <code>data.js</code> with a verified case study to use Afterlives for real research.</p>';
+      '<p class="demo-note">' + esc(c.note || '') + ' <a href="#/build">Edit this collection</a>, import JSON, or start a blank one.</p>';
   }
 
   function layout() {
@@ -448,7 +445,7 @@ window.AFTERLIVES_DATA = {
       ? '<div class="relbox">' + pill(relCls(e.type), e.type) + ' <strong>' + vs(e.from) + ' → ' + vs(e.to) + '.</strong> ' + esc(e.evidence) + '</div>'
       : '<div class="relbox">No documented connection is recorded between these versions. Resemblance alone does not show influence.</div>';
     var rows = D.topics.map(function (t) {
-      var ta = D.passages[A][t.id], tb = D.passages[B][t.id], key = pairKey(A, B) + '|' + t.id;
+      var ta = (D.passages[A] || {})[t.id] || '', tb = (D.passages[B] || {})[t.id] || '', key = pairKey(A, B) + '|' + t.id;
       var ha = S.diff ? highlight(ta, contentSet(tb)) : esc(ta), hb = S.diff ? highlight(tb, contentSet(ta)) : esc(tb);
       return '<section class="topic"><h2>' + esc(t.label) + '</h2><div class="cols2">' +
         '<div class="passage"><div class="who"><span>' + vs(A) + '</span><span>' + esc(V[A].year) + '</span></div><p>' + ha + '</p></div>' +
@@ -467,7 +464,7 @@ window.AFTERLIVES_DATA = {
     var qbox = status === 'revised'
       ? '<label for="q-' + s.id + '">Your revised question</label><textarea id="q-' + s.id + '" data-lens-text="' + s.id + '">' + esc(st.text != null ? st.text : s.question) + '</textarea>'
       : '<p class="q">' + esc(s.question) + '</p>';
-    return '<article class="sugg ' + status + '"><div class="tagrow">' + pill('ai', 'AI suggestion · prepared demo') +
+    return '<article class="sugg ' + status + '"><div class="tagrow">' + pill('ai', s.src === 'claude' ? 'AI suggestion · Claude' : s.src === 'local' ? 'Text-difference suggestion' : 'Sample suggestion') +
       '<span>' + vs(s.pair[0]) + ' → ' + vs(s.pair[1]) + ' · ' + esc(TOPIC[s.topic].label) + '</span>' + (status ? pill(status, status === 'accepted' ? 'Accepted as question' : status === 'revised' ? 'Revised' : 'Rejected') : '') + '</div>' +
       '<h3>What the text shows</h3><p>' + esc(s.observation) + '</p>' +
       '<h3>A possible question</h3>' + qbox +
@@ -488,12 +485,12 @@ window.AFTERLIVES_DATA = {
     var list = D.suggestions.filter(function (s) { return S.pair === 'all' || s.pair.join('|') === S.pair; }).map(lensCard).join('');
     return '<div class="page-head"><p class="eyebrow">Feature 3</p><h1>The Critical Lens</h1><p>Turn differences into research questions. Each suggestion points to the passages that prompted it. You decide what becomes a question: accept it, revise it, reject it, or add a competing interpretation.</p></div>' +
       howto('Each card is a possible research question, with the text that prompted it. Open “Linked passages” to check it, then press Accept, Revise, or Reject.') +
-      '<p class="demo-note" style="margin-top:0;margin-bottom:1.25rem">These suggestions are prepared examples for the demo collection, not live model output. Always check them against the linked passages.</p>' +
+      genBox() +
       '<div class="controls"><div><label for="pair">Show suggestions for</label><select id="pair">' + opts + '</select></div></div>' + list;
   }
 
   function viewLedger() {
-    var rows = D.ledger[S.ledger].filter(function (r) { return S.filter === 'all' || r.status === S.filter; });
+    var rows = (D.ledger[S.ledger] || []).filter(function (r) { return S.filter === 'all' || r.status === S.filter; });
     var tabs = '<div class="tabs" role="group" aria-label="Version">' + D.versions.map(function (v) {
       return '<button class="tab" data-ledger-tab="' + v.id + '" aria-pressed="' + (v.id === S.ledger) + '">' + esc(v.short) + '</button>';
     }).join('') + '</div>';
@@ -551,13 +548,181 @@ window.AFTERLIVES_DATA = {
     setTimeout(function () { URL.revokeObjectURL(url); }, 500);
   }
 
+
+  /* ---------- data model: persistence, import/export, editing ---------- */
+  var NEED = { lineage: 1, compare: 1, lens: 1, ledger: 1 };
+  function clone(o) { return JSON.parse(JSON.stringify(o)); }
+  function blank() { return { collection: { title: 'My collection', subtitle: '', note: '' }, work: { title: 'Untitled work' }, topics: [], versions: [], edges: [], passages: {}, ledger: {}, suggestions: [] }; }
+  function normalize(o) {
+    if (!o || !Array.isArray(o.versions) || !Array.isArray(o.topics)) throw new Error('The file needs "versions" and "topics" arrays.');
+    var d = Object.assign(blank(), o); d.collection = Object.assign(blank().collection, o.collection); d.work = Object.assign(blank().work, o.work);
+    ['edges', 'suggestions'].forEach(function (k) { if (!Array.isArray(d[k])) d[k] = []; });
+    d.passages = d.passages || {}; d.ledger = d.ledger || {};
+    var ids = {}; d.versions.forEach(function (v) {
+      if (!v.id) throw new Error('Every version needs an id.'); ids[v.id] = 1;
+      d.passages[v.id] = d.passages[v.id] || {}; d.ledger[v.id] = d.ledger[v.id] || [];
+    });
+    d.edges = d.edges.filter(function (e) { return ids[e.from] && ids[e.to]; });
+    return d;
+  }
+  function save() { store.set('data', D); }
+  function rebuild() {
+    V = {}; TOPIC = {}; D.versions.forEach(function (v) { V[v.id] = v; }); D.topics.forEach(function (t) { TOPIC[t.id] = t; });
+    D.suggestions = D.suggestions.filter(function (x) { return V[x.pair[0]] && V[x.pair[1]] && TOPIC[x.topic] && x.passages.every(function (p) { return V[p.v] && TOPIC[p.t]; }); });
+    var ids = D.versions.map(function (v) { return v.id; });
+    ['node', 'A', 'ledger'].forEach(function (k) { if (!V[S[k]]) S[k] = ids[0]; });
+    if (!V[S.B]) S.B = ids[ids.length - 1];
+    if (S.edge !== null && !D.edges[S.edge]) S.edge = null;
+    if (S.pair !== 'all' && !D.suggestions.some(function (x) { return x.pair.join('|') === S.pair; })) S.pair = 'all';
+  }
+  try { D = normalize(store.get('data', null) || clone(DEMO)); } catch (e) { D = clone(DEMO); }
+  rebuild();
+  function download(text, name, type) {
+    var url = URL.createObjectURL(new Blob([text], { type: type })), a = document.createElement('a');
+    a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function () { URL.revokeObjectURL(url); }, 500);
+  }
+  function getp(path) { return path.split('.').reduce(function (o, k) { return o == null ? '' : o[k]; }, D); }
+  function setp(path, val) {
+    var k = path.split('.'), o = D;
+    for (var i = 0; i < k.length - 1; i++) o = o[k[i]] == null ? (o[k[i]] = {}) : o[k[i]];
+    o[k[k.length - 1]] = val;
+  }
+  function needMsg() { return '<div class="page-head"><h1>Add your material first</h1></div><p class="empty">This view needs at least two versions of a story. <a href="#/build">Open Build</a> to add them, or import a JSON collection there.</p>'; }
+
+  /* ---------- Build view ---------- */
+  function inp(p, ph) { return '<input type="text" data-set="' + p + '" value="' + esc(getp(p)) + '" placeholder="' + (ph || '') + '">'; }
+  function area(p) { return '<textarea data-set="' + p + '">' + esc(getp(p)) + '</textarea>'; }
+  function lab(l, h) { return '<div><label>' + l + '</label>' + h + '</div>'; }
+  function opts(map, sel) { return Object.keys(map).map(function (k) { return '<option value="' + k + '"' + (k === sel ? ' selected' : '') + '>' + esc(map[k]) + '</option>'; }).join(''); }
+  function viewBuild() {
+    var vmap = {}; D.versions.forEach(function (v) { vmap[v.id] = v.short || v.id; });
+    var relmap = {}; Object.keys(REL).forEach(function (k) { relmap[k] = k; });
+    var vers = D.versions.map(function (v, i) {
+      var p = 'versions.' + i + '.';
+      var pas = D.topics.map(function (t) { return '<div style="margin-top:.5rem">' + lab(esc(t.label), area('passages.' + v.id + '.' + t.id)) + '</div>'; }).join('') || '<p class="note-small">Add topics above to enter passages.</p>';
+      var led = (D.ledger[v.id] || []).map(function (r, j) {
+        var q = 'ledger.' + v.id + '.' + j + '.';
+        return '<div class="cols2" style="margin-top:.5rem">' + inp(q + 'field', 'Field (e.g. Creator)') + inp(q + 'value', 'Entry') + '</div><div class="actions" style="margin:.3rem 0"><select data-set="' + q + 'status">' + opts(STATUS, r.status) + '</select><button class="btn small ghost" data-do="del-ledger" data-id="' + v.id + '" data-j="' + j + '">Remove</button></div>';
+      }).join('');
+      return '<details class="card" style="margin-bottom:.8rem"' + (S.open === v.id ? ' open' : '') + '><summary>' + esc(v.short || '(untitled)') + ' · ' + esc(v.year || 'no date') + '</summary>' +
+        '<div class="cols2" style="margin-top:.6rem">' + lab('Short name', inp(p + 'short')) + lab('Full title', inp(p + 'title')) + lab('Medium', inp(p + 'medium')) + lab('Date', inp(p + 'year')) + lab('Language', inp(p + 'lang')) + '</div>' +
+        '<div style="margin-top:.5rem">' + lab('Summary', area(p + 'summary')) + '</div><h3 style="margin-top:1rem">Passages</h3>' + pas +
+        '<h3 style="margin-top:1rem">Context ledger</h3>' + led + '<div class="actions"><button class="btn small teal" data-do="add-ledger" data-id="' + v.id + '">Add ledger row</button><button class="btn small gray" data-do="del-version" data-id="' + v.id + '">Delete this version</button></div></details>';
+    }).join('');
+    var edges = D.edges.map(function (e, i) {
+      var p = 'edges.' + i + '.';
+      return '<div class="card" style="margin-bottom:.8rem"><div class="cols2">' + lab('Source version', '<select data-set="' + p + 'from">' + opts(vmap, e.from) + '</select>') + lab('Adaptation / later version', '<select data-set="' + p + 'to">' + opts(vmap, e.to) + '</select>') + '</div>' +
+        '<div style="margin-top:.5rem">' + lab('Relationship', '<select data-set="' + p + 'type">' + opts(relmap, e.type) + '</select>') + '</div><div style="margin-top:.5rem">' + lab('Evidence: cite where this is documented', area(p + 'evidence')) + '</div>' +
+        '<div class="actions"><button class="btn small gray" data-do="del-edge" data-id="' + i + '">Remove connection</button></div></div>';
+    }).join('');
+    return '<div class="page-head"><p class="eyebrow">Your material</p><h1>Build your collection</h1><p>Enter the versions of a story, their passages, how they are connected, and what is known about each. Everything saves automatically in this browser. Export a JSON backup regularly.</p></div>' +
+      '<div class="actions"><button class="btn small" data-do="export-json">Export JSON</button><label class="btn small ghost">Import JSON<input id="imp" type="file" accept=".json,application/json" hidden></label>' +
+      '<button class="btn small gray" data-do="blank">Start blank</button><button class="btn small ghost" data-do="sample">Load sample</button></div>' +
+      '<h2 style="margin-top:1rem">Collection</h2><div class="cols2">' + lab('Collection title', inp('collection.title')) + lab('Work title', inp('work.title')) + lab('Subtitle', inp('collection.subtitle')) + lab('Note shown on Home', inp('collection.note')) + '</div>' +
+      '<h2 style="margin-top:1.5rem">Topics to compare</h2><label for="topics">One per line, e.g. Opening, Protagonist, Ending. Passages are tied to the topic name, so renaming a topic starts it empty.</label><textarea id="topics">' + esc(D.topics.map(function (t) { return t.label; }).join('\n')) + '</textarea>' +
+      '<h2 style="margin-top:1.5rem">Versions</h2>' + vers + '<div class="actions"><button class="btn teal" data-do="add-version">Add version</button></div>' +
+      '<h2 style="margin-top:1.5rem">Connections</h2>' + (edges || '<p class="empty">No connections yet. Only record a connection you can cite.</p>') +
+      '<div class="actions"><button class="btn teal" data-do="add-edge"' + (D.versions.length < 2 ? ' disabled' : '') + '>Add connection</button></div>' + nextBtn('#/lineage', 'See the lineage');
+  }
+
+  /* ---------- suggestion generators ---------- */
+  function genBox() {
+    return '<div class="card" style="margin-bottom:1.25rem"><h3>Generate suggestions</h3><p class="note-small"><strong>From text differences</strong> runs locally on your passages along each connection. <strong>With Claude</strong> sends those passages to the Anthropic API using your own key, which is saved only in this browser. Check every suggestion against its linked passages.</p>' +
+      '<div class="actions"><button class="btn small teal" data-do="gen-local">From text differences</button><button class="btn small" data-do="gen-claude">With Claude</button><button class="btn small ghost" data-do="gen-clear">Remove unreviewed generated</button></div>' +
+      '<label for="apikey">Anthropic API key (needed only for Claude)</label><input id="apikey" type="password" autocomplete="off" value="' + esc(S.key) + '" placeholder="sk-ant-..."><p class="note-small" role="status" style="margin:.5rem 0 0">' + esc(S.msg) + '</p></div>';
+  }
+  function genLocal() {
+    var n = 0, list = function (a) { return a.length ? '“' + a.join('”, “') + '”' : 'no distinctive words'; };
+    D.edges.forEach(function (e) { D.topics.forEach(function (t) {
+      var a = (D.passages[e.from] || {})[t.id] || '', b = (D.passages[e.to] || {})[t.id] || '', id = 'g-' + e.from + '-' + e.to + '-' + t.id;
+      if (!a.trim() || !b.trim() || D.suggestions.some(function (x) { return x.id === id; })) return;
+      var A = contentSet(a), B = contentSet(b), inter = 0; A.forEach(function (w) { if (B.has(w)) inter++; });
+      var sim = inter / ((A.size + B.size - inter) || 1); if (sim > 0.6) return;
+      var oa = Array.from(A).filter(function (w) { return !B.has(w); }).slice(0, 6), ob = Array.from(B).filter(function (w) { return !A.has(w); }).slice(0, 6);
+      D.suggestions.push({ id: id, pair: [e.from, e.to], topic: t.id, src: 'local', passages: [{ v: e.from, t: t.id }, { v: e.to, t: t.id }],
+        observation: 'The passages share ' + Math.round(sim * 100) + '% of their content words. ' + V[e.from].short + ' uses ' + list(oa) + '; ' + V[e.to].short + ' uses ' + list(ob) + '.',
+        question: 'What changed in “' + t.label + '” between ' + V[e.from].short + ' and ' + V[e.to].short + ', and what documented evidence (credits, author notes, platform conventions) could explain it?' }); n++;
+    }); });
+    save(); S.msg = n ? 'Added ' + n + ' suggestions.' : 'No new suggestions: passages are missing, very similar, or already covered.'; render(true);
+  }
+  function genClaude() {
+    if (!S.key) { S.msg = 'Paste an Anthropic API key first.'; return render(true); }
+    S.msg = 'Asking Claude…'; render(true);
+    var jobs = D.edges.map(function (e) {
+      var P = {}; D.topics.forEach(function (t) { P[t.id] = { label: t.label, earlier: (D.passages[e.from] || {})[t.id] || '', later: (D.passages[e.to] || {})[t.id] || '' }; });
+      var prompt = 'You assist a literary researcher comparing “' + V[e.from].title + '” (' + V[e.from].medium + ') with “' + V[e.to].title + '” (' + V[e.to].medium + '). Return ONLY a JSON array of up to 3 objects {"topic": <topic id>, "observation": <what the text shows, no speculation>, "question": <an open research question>}. Do not assert influence or intent; frame explanations as questions. Passages: ' + JSON.stringify(P);
+      return fetch('https://api.anthropic.com/v1/messages', { method: 'POST', headers: { 'content-type': 'application/json', 'x-api-key': S.key, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
+        body: JSON.stringify({ model: 'claude-sonnet-5-5', max_tokens: 1500, messages: [{ role: 'user', content: prompt }] }) })
+        .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error((j.error && j.error.message) || r.status); return j; }); })
+        .then(function (j) { var txt = j.content.map(function (c) { return c.text || ''; }).join('').replace(/```json|```/g, '').trim(); return JSON.parse(txt).map(function (x) { return { e: e, x: x }; }); });
+    });
+    Promise.all(jobs).then(function (res) {
+      var n = 0; res.forEach(function (arr) { arr.forEach(function (o) {
+        if (!TOPIC[o.x.topic] || !o.x.observation || !o.x.question) return;
+        D.suggestions.push({ id: 'c-' + Date.now() + '-' + (n++), pair: [o.e.from, o.e.to], topic: o.x.topic, src: 'claude', observation: String(o.x.observation), question: String(o.x.question), passages: [{ v: o.e.from, t: o.x.topic }, { v: o.e.to, t: o.x.topic }] });
+      }); });
+      save(); S.msg = 'Added ' + n + ' suggestions from Claude.'; render(true);
+    }).catch(function (err) { S.msg = 'Claude request failed: ' + err.message; render(true); });
+  }
+
+  /* ---------- Build / generator events ---------- */
+  document.addEventListener('click', function (ev) {
+    var el = ev.target.closest('[data-do]'); if (!el) return;
+    var d = el.getAttribute('data-do'), id = el.getAttribute('data-id'), j = +el.getAttribute('data-j');
+    if (d === 'gen-local' || d === 'gen-claude') {
+      if (!D.edges.length) { S.msg = 'Add at least one connection in Build first.'; return render(true); }
+      return d === 'gen-local' ? genLocal() : genClaude();
+    }
+    if (d === 'export-json') return download(JSON.stringify(D, null, 2), 'afterlives-collection.json', 'application/json');
+    if (d === 'blank' || d === 'sample') {
+      if (!confirm('Replace the current collection and clear saved notes? Export JSON first if you want a backup.')) return;
+      D = d === 'blank' ? blank() : clone(DEMO); S.ann = {}; S.lens = {}; S.msg = ''; S.open = null; store.set('ann', {}); store.set('lens', {});
+    } else if (d === 'add-version') {
+      var n = 1; while (V['v' + n]) n++; id = 'v' + n;
+      D.versions.push({ id: id, short: 'New version', title: '', medium: '', year: '', lang: '', summary: '' }); D.passages[id] = {}; D.ledger[id] = []; S.open = id;
+    } else if (d === 'del-version') {
+      if (!confirm('Delete this version and everything attached to it?')) return;
+      D.versions = D.versions.filter(function (v) { return v.id !== id; }); D.edges = D.edges.filter(function (e) { return e.from !== id && e.to !== id; }); delete D.passages[id]; delete D.ledger[id];
+    } else if (d === 'add-edge') { D.edges.push({ from: D.versions[0].id, to: D.versions[1].id, type: 'documented adaptation', evidence: '' });
+    } else if (d === 'del-edge') { D.edges.splice(+id, 1);
+    } else if (d === 'add-ledger') { D.ledger[id].push({ field: '', value: '', status: 'verified' }); S.open = id;
+    } else if (d === 'del-ledger') { D.ledger[id].splice(j, 1); S.open = id;
+    } else if (d === 'gen-clear') {
+      D.suggestions = D.suggestions.filter(function (x) { var l = S.lens[x.id] || {}; return !x.src || l.status === 'accepted' || l.status === 'revised' || (l.competing && l.competing.trim()); }); S.msg = 'Removed unreviewed generated suggestions.';
+    } else return;
+    save(); rebuild(); render(true);
+  });
+  function onSet(ev) {
+    var t = ev.target, p = t.getAttribute && t.getAttribute('data-set');
+    if (p) { setp(p, t.value); save(); }
+    else if (t.id === 'apikey') { S.key = t.value.trim(); store.set('key', S.key); }
+  }
+  document.addEventListener('input', onSet); document.addEventListener('change', onSet);
+  document.addEventListener('change', function (ev) {
+    var t = ev.target;
+    if (t.id === 'topics') {
+      var old = {}, used = {}; D.topics.forEach(function (x) { old[x.label] = x.id; });
+      D.topics = t.value.split('\n').map(function (l) { return l.trim(); }).filter(Boolean).map(function (l) {
+        var id = old[l] || l.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 't', b = id, k = 2;
+        while (used[id]) id = b + '-' + k++; used[id] = 1; return { id: id, label: l };
+      });
+      save(); rebuild(); render(true);
+    } else if (t.id === 'imp' && t.files[0]) {
+      if (!confirm('Replace the current collection with this file?')) { t.value = ''; return; }
+      var r = new FileReader();
+      r.onload = function () { try { D = normalize(JSON.parse(r.result)); save(); rebuild(); render(true); } catch (e) { alert('Could not import: ' + e.message); } };
+      r.readAsText(t.files[0]);
+    }
+  });
+
   /* ---------- router + events ---------- */
-  var ROUTES = { home: viewHome, lineage: viewLineage, compare: viewCompare, lens: viewLens, ledger: viewLedger, notes: viewNotes };
-  var TITLES = { home: 'Home', lineage: 'Story Lineage', compare: 'Comparison Room', lens: 'Critical Lens', ledger: 'Context Ledger', notes: 'Research Notes' };
+  var ROUTES = { home: viewHome, lineage: viewLineage, compare: viewCompare, lens: viewLens, ledger: viewLedger, notes: viewNotes, build: viewBuild };
+  var TITLES = { home: 'Home', lineage: 'Story Lineage', compare: 'Comparison Room', lens: 'Critical Lens', ledger: 'Context Ledger', notes: 'Research Notes', build: 'Build' };
   function route() { var r = (location.hash.match(/^#\/(\w+)/) || [])[1]; return ROUTES[r] ? r : 'home'; }
   function render(keepScroll) {
     var y = window.scrollY, r = route();
-    $('#app').innerHTML = ROUTES[r]();
+    $('#app').innerHTML = (NEED[r] && D.versions.length < 2) ? needMsg() : ROUTES[r]();
     document.title = (r === 'home' ? '' : TITLES[r] + ' · ') + 'Afterlives';
     Array.prototype.forEach.call(document.querySelectorAll('#nav a'), function (a) {
       if (a.getAttribute('data-route') === r) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
